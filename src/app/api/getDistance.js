@@ -7,7 +7,7 @@ config();
 export async function getDistance(origin, destination) {
     try {
         
-      const apiUrl = `https://maps.googleapis.com/maps/api/distancematrix/json?destinations=${destination}&origins=${origin}&key=AIzaSyDz1TeVVi6-DGDXEJU2hq3QDZhAZnzDDdM`;
+      const apiUrl = `https://maps.googleapis.com/maps/api/distancematrix/json?destinations=${destination}&origins=${origin}&key=API_KEY`;
     
   
       const response = await axios.get(apiUrl);
