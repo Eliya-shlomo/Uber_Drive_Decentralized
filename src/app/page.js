@@ -4,13 +4,16 @@ import './page.css';
 import { config } from 'dotenv';
 config();
 import { Wallet, ethers } from 'ethers';
-import { abi,bytecode } from './contract.json';
+import contract from './contract.json';
 import axios from 'axios';
 
 
 
 
 const HomePage = () => {
+  const abi = contract.abi;
+  const bytecode = contract.bytecode;
+
   const [SmartContractFactory, setSmartContractFactory] = useState('');
   const [RiderPrivateKey, setRiderPrivateKey] = useState('');
   const [RiderAddress, setRiderAddress] = useState('');
@@ -18,9 +21,11 @@ const HomePage = () => {
   const [originAddress, setOriginAddress] = useState('');
   const [destinationAddress, setDestinationAddress] = useState('');
   const [signer, setSigner] = useState();
+  const [provider, setProvider] = useState();
+
   const [distance, setDistance] = useState(null);
   const [smartContract, setSmartContract] = useState(null); 
-  const [Nonce, setNonce] = useState(null);
+  const [Nonce, setNonce] = useState(0);
   const [RiderWallet, setRiderWallet] = useState(null);
 
 
@@ -42,6 +47,7 @@ const HomePage = () => {
 
 
       const provider = new ethers.WebSocketProvider("ws://127.0.0.1:8545");
+      setProvider(provider);
       const signer = await provider.getSigner();
       setSigner(signer);
       console.log("Account:", await signer.getAddress());
@@ -54,7 +60,7 @@ const HomePage = () => {
 
   const MakeRiderWallet = async() => {
     try {
-      const Riderwallet = new ethers.Wallet(provider,RiderPrivateKey);
+      const Riderwallet = new ethers.Wallet(RiderPrivateKey,provider);
       setRiderWallet(Riderwallet)
     } catch (error) {
       console.error(err);
@@ -67,7 +73,6 @@ const HomePage = () => {
       console.log("trying make a wallet");
       MakeRiderWallet();
       console.log("sucsses making a wallet");
-  
       console.log("trying make a Smart Contract Factory");
       const SmartContractFactory =  new ethers.ContractFactory(
         abi,
@@ -83,43 +88,45 @@ const HomePage = () => {
   }
 
 
+  const MakeContractInstance = async () => {
+
+      try {
+       
+        await GetNonce(); 
+        //set price for miners
+        const overrides = {
+          gasLimit: 3000000,
+          gasPrice: ethers.parseUnits('4', 'gwei'),
+          nonce: Nonce,
+        };
+  
+        await GetNonce(); 
+        console.log("Deploying contract...");
+        const smartContract = await SmartContractFactory.deploy(RiderAddress, DriverAddress, overrides);
+        await smartContract.deploymentTransaction().wait(2); // Wait for the transaction to be mined
+        
+        console.log('Contract deployed at address:', smartContract.address);
+        setSmartContract(smartContract);
+  
+      } catch (error) {
+        console.error('Error deploying contract:', error);
+        return null;
+      }
+  };
+
+
   const GetNonce = async() => {
     try {
       console.log("trying getting nonce");
-      Nonce = await RiderWallet.getNonce();
-      console.log("succsees getting Nonce");
-      setNonce(Nonce);
+      const newNonce = Nonce + 1;
+      console.log("success getting Nonce");
+      setNonce(newNonce);  // Update the state with the new nonce value
+      console.log("Nonce value is:" , Nonce);
     } catch (error) {
       console.log(error);
     }
   }
 
-
-  const MakeContractInstance = async () => {
-    try {
-      
-       const Nonce = GetNonce();
-
-
-      //set price for miners
-      const overrides = {
-        gasLimit: 3000000,
-        gasPrice: ethers.utils.parseUnits('4', 'gwei'),
-        nonce: Nonce,
-      };
-
-
-      console.log("Deploying contract...");
-      const smartContract = await SmartContractFactory.deploy(RiderAddress, DriverAddress, overrides);
-      await smartContract.deployTransaction.wait(); // Wait for the transaction to be mined
-      console.log('Contract deployed at address:', smartContract.address);
-      setSmartContract(smartContract);
-
-    } catch (error) {
-      console.error('Error deploying contract:', error);
-      return null;
-    }
-  };
 
 
 
@@ -135,9 +142,6 @@ const HomePage = () => {
     MakeContractFactory();
     console.log("success makeing Factory");
 
-    console.log("Trying make Contract instance");
-    MakeContractInstance();
-    console.log("Succsses makeing Contract instance");
 
     bookDrive();
   };
@@ -166,14 +170,14 @@ const HomePage = () => {
   const bookDrive = async () => {
     try {
 
-      const Nonce = GetNonce(RiderWallet);
+      await GetNonce();
       const sendValue = ethers.parseEther(distance.toString()); 
       console.log("Booking drive with the following details:");
       console.log("Driver Address:", DriverAddress);
       console.log("Rider Address:", RiderAddress);
       console.log("Send Value:", sendValue.toString());
       await smartContract.bookDrive(DriverAddress,{value : sendValue , nonce: Nonce }); 
-      console.log("Drive booked successfully!");
+      console.log("Drive booked successfullyyy!");
     } catch (err) {
       console.error("Error booking drive:", err);
       alert("Error booking drive!");
@@ -184,10 +188,14 @@ const HomePage = () => {
 
   const completeDrive = async () => {
     try {
-      const Nonce = GetNonce(RiderWallet);
+      await GetNonce();
       console.log("Completing drive with the following details:");
       await smartContract.completeDrive(DriverAddress , {nonce: Nonce}); 
       console.log("Drive completed successfully!");
+      
+      const balance = await provider.getBalance('0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266');
+      const formattedBalance = ethers.formatEther(balance);
+      console.log(`Your ETH balance: ${formattedBalance} ETH`);
     } catch (err) {
       console.error("Error completing drive:", err);
       alert("Error completing drive");
@@ -205,7 +213,7 @@ const HomePage = () => {
     <div className="container">
       <form className="form" onSubmit={handleSubmit}>
       <div className="input-group">
-          <label>RIDER ADDRESS</label>
+          <label>RIDER WALLET ADDRESS</label>
           <input
             type="text"
             value={RiderAddress}
@@ -216,7 +224,7 @@ const HomePage = () => {
       <div className="input-group">
           <label>RIDER PRIVATE KEY</label>
           <input
-            type="text"
+            type="password"
             value={RiderPrivateKey}
             onChange={(e) => setRiderPrivateKey(e.target.value)}
             required
@@ -232,7 +240,7 @@ const HomePage = () => {
           />
         </div>
         <div className="input-group">
-          <label>ORIGIN ADDRESS</label>
+          <label>WHERE I AM </label>
           <input
             type="text"
             value={originAddress}
@@ -241,7 +249,7 @@ const HomePage = () => {
           />
         </div>
         <div className="input-group">
-          <label>DESTINATION ADDRESS</label>
+          <label>WHERE I WANT TO GO</label>
           <input
             type="text"
             value={destinationAddress}
