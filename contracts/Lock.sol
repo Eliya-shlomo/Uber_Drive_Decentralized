@@ -1,34 +1,61 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.19;
 
-// Uncomment this line to use console.log
-// import "hardhat/console.sol";
+contract UberDrive {
+    mapping(address => mapping(address => Drive)) public drives;
+    mapping(address => mapping(address => uint256)) public deposits;
+    address public agent;
 
-contract Lock {
-    uint public unlockTime;
-    address payable public owner;
+    event DriveBooked(address indexed driver, address indexed rider, uint price, bool isCompleted);
+    event DriveCompleted(address indexed driver, address indexed rider, uint price, bool isCompleted);
 
-    event Withdrawal(uint amount, uint when);
-
-    constructor(uint _unlockTime) payable {
-        require(
-            block.timestamp < _unlockTime,
-            "Unlock time should be in the future"
-        );
-
-        unlockTime = _unlockTime;
-        owner = payable(msg.sender);
+    struct Drive {
+        address driver;
+        address rider;
+        uint price;
+        bool isCompleted;
     }
 
-    function withdraw() public {
-        // Uncomment this line, and the import of "hardhat/console.sol", to print a log in your terminal
-        // console.log("Unlock time is %o and block timestamp is %o", unlockTime, block.timestamp);
+    modifier onlyAgent() {
+        require(msg.sender == agent, "Not authorized");
+        _;
+    }
 
-        require(block.timestamp >= unlockTime, "You can't withdraw yet");
-        require(msg.sender == owner, "You aren't the owner");
+    constructor(address _rider, address _driver) payable {
+        agent = msg.sender; // Set the agent to the contract deployer initially
+        drives[_rider][_driver].rider = _rider;
+        drives[_rider][_driver].driver = _driver;
+    }
 
-        emit Withdrawal(address(this).balance, block.timestamp);
+    function bookDrive(address _driver) public onlyAgent payable {
+        require(_driver != msg.sender, "Driver and rider cannot be the same person");
+        require(_driver != address(0), "No driver assigned to the ride");
+        require(msg.sender != address(0), "No rider assigned to the ride");
 
-        owner.transfer(address(this).balance);
+        uint amount = msg.value;
+        deposits[_driver][msg.sender] += amount;
+
+        drives[msg.sender][_driver] = Drive({
+            driver: _driver,
+            rider: msg.sender,
+            price: msg.value,
+            isCompleted: false
+        });
+
+        emit DriveBooked(_driver, msg.sender, msg.value, false);
+    }
+
+    function completeDrive(address payable _driver) public onlyAgent {
+        Drive storage drive = drives[msg.sender][_driver];
+        uint256 payment = deposits[_driver][msg.sender];
+        deposits[_driver][msg.sender] = 0;
+
+        require(!drive.isCompleted, "Ride is already completed");
+        require(msg.sender == drive.rider, "Only the rider can complete the drive");
+
+        _driver.transfer(payment);
+        drive.isCompleted = true;
+
+        emit DriveCompleted(drive.driver, msg.sender, drive.price, true);
     }
 }
